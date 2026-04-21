@@ -29,7 +29,7 @@ def on_message(client, userdata, msg):
 
         if not hex_data: return
         samples = parse_samples(hex_data)
-        print(samples)
+
         if sensor_type == "piezo":
             time_step = 1.0 / len(samples) if len(samples) > 0 else 0
             for i, val in enumerate(samples):
