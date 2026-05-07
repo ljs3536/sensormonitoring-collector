@@ -19,19 +19,6 @@ def parse_samples(hex_str: str):
         samples.append(value)
     return samples
 
-# FFT 변환 및 파이프 문자열 생성 함수
-def process_fft_and_format(real_vals):
-    # 1. 실수형 1D 배열을 FFT 변환 (rfft는 실수 입력에 최적화됨)
-    fft_result = np.abs(np.fft.rfft(real_vals))
-    
-    # [중요 포인트] 기존 AI 모델이 기대하는 배열 길이(Dimension)나 
-    # 특정 주파수 대역(예: 25kHz~88kHz)이 있다면 여기서 슬라이싱을 해야 합니다.
-    # 예시: fft_result = fft_result[start_index:end_index]
-    
-    # 2. 소수점 8자리까지 표현하여 파이프(|)로 연결
-    str_data = "|".join([f"{val:.8f}" for val in fft_result])
-    return str_data
-
 # MQTT 메시지를 받을 때 실행되는 콜백 함수 (오직 저장만!)
 def on_message(client, userdata, msg):
     try:
@@ -47,9 +34,10 @@ def on_message(client, userdata, msg):
         leak_yn = "Y" if label == "leak" else "N"
 
         if not hex_data: return
-        samples = parse_samples(hex_data)
+        
 
         if sensor_type == "piezo":
+            samples = parse_samples(hex_data)
             time_step = 1.0 / len(samples) if len(samples) > 0 else 0
             real_vals = [round(val / 1000.0, 4) for val in samples]
 
@@ -57,11 +45,10 @@ def on_message(client, userdata, msg):
                 current_ts = ts + (i * time_step)
                 # 웹소켓이나 deque 로직 없이 바로 InfluxDB로 직행!
                 save_piezo_data(sensor_id, real_val, current_ts, label) 
+        
+        elif sensor_type == "normal":
 
-            # 3. FFT 변환 및 통문자열 생성
-            fft_string = process_fft_and_format(real_vals)
-            
-            # 4. RDB 저장 (AI 모델용 데이터)
+            fft_string = raw_payload.get("hex_data")
             save_fft_to_rdb(
                 mac_addr=sensor_id,
                 sensor_data_str=fft_string,
@@ -69,8 +56,9 @@ def on_message(client, userdata, msg):
                 leak_prob="0", # 수집 단계이므로 초기값 세팅, AI 추론 후 업데이트 됨
                 leak_yn=leak_yn
             )
-                
+
         elif sensor_type == "adxl":
+            samples = parse_samples(hex_data)
             num_records = len(samples) // 3
             time_step = 1.0 / num_records if num_records > 0 else 0
             for i in range(0, len(samples), 3):
